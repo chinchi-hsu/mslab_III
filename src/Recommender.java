@@ -1,21 +1,16 @@
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.IOException;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.io.*;
 import java.util.*;
 import java.nio.file.*;
 
 /**
  * The class is the core of the recommender system.
- *
  */
 
 public class Recommender {
     String libfmPath;
-    String trainPath;
-    String testPath;
-    String outputPath;
+    String trainFilePath;
+    String testFilePath;
+    String predictionFilePath;
     int nFactors;
 
     public Recommender(String libfmPath, int nFactors) {
@@ -23,55 +18,54 @@ public class Recommender {
         this.nFactors = nFactors;
     }
 
-    public void setTrainPath(String s) { this.trainPath = s; }
-    public void setTestPath(String s) { this.testPath = s; }
-    public void setOutputPath(String s) { this.outputPath = s; }
+    // call these functions and set up the file paths properly before calling run()
+    public void setTrainPath(String s) { this.trainFilePath = s; }
+    public void setTestPath(String s) { this.testFilePath = s; }
+    public void setPredictionPath(String s) { this.predictionFilePath = s; }
 
     /**
-     * <p>First, the command used to call libFM is built.
+     * First, the command used to call libFM is built.
      * Then, this command is executed with a <tt>ProcessBuilder</tt> object.
-     * The program output is redirected into a <tt>BufferedReader</tt>.
      *
-     * @throws IOException if something goes wrong when reading from stdout
-     *                     or stderr. (unlikely)
+     * @return the prediction results
      */
-    public double run() throws IOException {
-        ArrayList<String> args = new ArrayList<String>();
-        args.add(libFMPath);
+    public List<Double> run() throws IOException {
+        // sanity check
+        if (trainFilePath == null) throw new IOException("Training file not specified");
+        if (testFilePath == null) throw new IOException("Testing file not specified");
+        if (predictionFilePath == null) throw new IOException("Prediction file not specified");
+
+        // build argument list
+        List<String> args = new ArrayList<String>();
+        args.add(libfmPath);
         args.add("-task");
         args.add("r");
         args.add("-train");
-        args.add(this.trainFilePath);
+        args.add(trainFilePath);
         args.add("-test");
         args.add(testFilePath);
         args.add("-dim");
-        args.add("'1,1," + this.nFactors + "'");
+        args.add("'1,1," + nFactors + "'");
+        args.add("-out");
+        args.add(predictionFilePath);
 
-        // write predictions to outputPath if specified
-        if (this.outputPath != null) {
-            args.add("-out");
-            args.add(outputFilePath);
-        }
-
+        // run libFM
         ProcessBuilder pb = new ProcessBuilder(args);
         pb.redirectErrorStream(true);
         BufferedReader stdout = new BufferedReader(new InputStreamReader(pb.start().getInputStream()));
-
-        double trainScore = 0.0, testScore = 0.0;
         String line = null;
-        while ((line = stdout.readLine()) != null) {
-            if (line.startsWith("#Iter")) {
-                trainScore = parseRMSE(line, "Train=[0-9.]*");
-                testScore = parseRMSE(line, "Test=[0-9.]*");
-            }
-        }
-        return testScore;
+        while ((line = stdout.readLine()) != null) {}
+
+        // parse prediction file, return the result
+        Path p = FileSystems.getDefault().getPath(predictionFilePath);
+        return parsePredictionFile(p);
     }
 
-    double parseRMSE(String line, String patternStr) {
-        Pattern pattern = Pattern.compile(patternStr);
-        Matcher matcher = pattern.matcher(line);
-        matcher.find();
-        return Double.parseDouble(matcher.group().substring(patternStr.indexOf('=') + 1));
+    List<Double> parsePredictionFile(Path p) throws IOException {
+        List<Double> result = new ArrayList<Double>();
+        List<String> lines = Files.readAllLines(p);
+        for (String line : lines)
+            result.add(Double.parseDouble(line.trim()));
+        return result;
     }
 }

@@ -1,52 +1,27 @@
 import java.util.*;
 import java.io.*;
+import java.nio.file.*;
+import java.nio.charset.StandardCharsets;
 import au.com.bytecode.opencsv.*;
 
 public class Transformation{
-	public static void main(String[] argv) throws Exception{
-		String csvFilePath = argv[0];
-		String outputFilePath = argv[1];
-		int userColumnIndex = Integer.parseInt(argv[2]);
-		int itemColumnIndex = Integer.parseInt(argv[3]);
-
-		CSVHandler csvHandler = new CSVHandler(csvFilePath, outputFilePath);
-		csvHandler.readCSVFile(userColumnIndex, itemColumnIndex);
-
-		csvHandler.remapUserNumbers();
-		csvHandler.remapItemNumbers();
-		if(argv.length > 4){
-			csvHandler.readFeatures(argv[4]);
-		}
-		csvHandler.constructRatings();
-		csvHandler.writeOutputFile();
-	}
-}
-
-class CSVHandler{
-	private String csvFilePath;
-	private String outputFilePath;
-	ArrayList<String> users;
-	ArrayList<String> items;
-	HashMap<String, String> userMap;
-	HashMap<String, String> itemMap;
-	HashMap<String, String> featureMap;
-	HashMap<String, HashMap<String, Integer> > ratingMap;
+	private HashMap<String, Integer> userNameIDMap;
+	private HashMap<String, Integer> itemNameIDMap;
+	private HashMap<Integer, String> userIDNameMap;
+	private HashMap<Integer, String> itemIDNameMap;
+	private HashMap<String, HashMap<String, Integer> > ratingMap;
 	
-	public CSVHandler(String csvFilePath, String outputFilePath){
-		this.csvFilePath = csvFilePath;
-		this.outputFilePath = outputFilePath;
-
-		this.users = new ArrayList<String>();
-		this.items = new ArrayList<String>();
-		this.userMap = new HashMap<String, String>();
-		this.itemMap = new HashMap<String, String>();
-		this.featureMap = new HashMap<String, String>();
+	public Transformation(){
+		this.userNameIDMap = new HashMap<String, Integer>();
+		this.itemNameIDMap = new HashMap<String, Integer>();
+		this.userIDNameMap = new HashMap<Integer, String>();
+		this.itemIDNameMap = new HashMap<Integer, String>();
 		this.ratingMap = new HashMap<String, HashMap<String, Integer> >();
 	}
 
-	public void readCSVFile(int userColumnIndex, int itemColumnIndex) throws Exception{
-		this.users.clear();
-		this.items.clear();
+	// Reads user / item information from an CSV file, and constructs a mapping between read names and IDs
+	public void readCSVFile(String csvFilePath, int userColumnIndex, int itemColumnIndex) throws IOException {
+		this.clearMappings();
 
 		CSVReader csvReader = new CSVReader(new FileReader(csvFilePath));
 		String[] row = null;
@@ -64,106 +39,86 @@ class CSVHandler{
 				continue;
 			}
 
-			users.add(user);
-			items.add(item);
+			this.userNameIDMap.put(user, 0);	// adds to the user list
+			this.itemNameIDMap.put(item, 0);	// adds to the item list
+			this.addRating(user, item);		// adds the rating of the user to the item
 		}
 
 		csvReader.close();
+
+		this.constructMaps(this.userNameIDMap, this.userIDNameMap);
+		this.constructMaps(this.itemNameIDMap, this.itemIDNameMap, userIDNameMap.size());
 	}
 
-	public void constructRatings(){
-		this.ratingMap.clear();
+    public void writeOutputFile(String outputFilePath) throws IOException {
+        Files.write(FileSystems.getDefault().getPath(outputFilePath), getLibfmFormatLines(), StandardCharsets.UTF_8);
+    }
 
-		for(int i = 0; i < this.users.size(); i ++){
-			String user = this.users.get(i);
-			String item = this.items.get(i);
+    public List<String> getLibfmFormatLines() {
+        List<String> lines = new ArrayList<String>();
+        for(Map.Entry<String, HashMap<String, Integer> > userKey: this.ratingMap.entrySet()){
+            String user = userKey.getKey();
+            HashMap<String, Integer> itemMap = userKey.getValue();
+            for(Map.Entry<String, Integer> itemKey: itemMap.entrySet()){
+                String item = itemKey.getKey();
+                Integer rating = itemKey.getValue();
+                int remappedUser = this.mapUserNameToID(user);
+                int remappedItem = this.mapItemNameToID(item);
+                lines.add(String.format("%d %d:1 %d:1", rating, remappedUser, remappedItem));
+            }
+        }
+        return lines;
+    }
 
-			if(!this.ratingMap.containsKey(user)){
-				this.ratingMap.put(user, new HashMap<String, Integer>());
-			}
-			if(!this.ratingMap.get(user).containsKey(item)){
-				this.ratingMap.get(user).put(item, 0);
-			}
-
-			int rating = this.ratingMap.get(user).get(item);
-			this.ratingMap.get(user).put(item, rating + 1);
-		}
-	}
-
-	public void remapUserNumbers(){
-		this.remapListNumbers(this.users, this.userMap);
+	public int mapUserNameToID(String name){
+		return this.userNameIDMap.get(name);
 	}
 	
-	public void remapItemNumbers(){
-		this.remapListNumbers(this.items, this.itemMap, this.userMap.size()+1);
+	public int mapItemNameToID(String name){
+		return this.itemNameIDMap.get(name);
 	}
 
-	public void readFeatures(String featureFilePath) throws Exception{
-		CSVReader csvReader = new CSVReader(new FileReader(featureFilePath));
-		String[] row = null;
-		boolean isHeader = true;
+	public String mapUserIDToName(int ID){
+		return this.userIDNameMap.get(ID);
+	}
 
-		while((row = csvReader.readNext()) != null){
-			if(isHeader){
-				isHeader = false;
-				continue;
-			}
+	public String mapItemIDToName(int ID){
+		return this.itemIDNameMap.get(ID);
+	}
 
-			String item = itemMap.get(row[0]), s = "";
-			for(int i = 1; i < row.length; i ++){
-				s += (itemMap.size()+userMap.size()+i) + ":" + row[i];
-			}
-			this.featureMap.put(item, s);
+	private void clearMappings(){
+		this.userNameIDMap.clear();
+		this.itemNameIDMap.clear();
+		this.userIDNameMap.clear();
+		this.itemIDNameMap.clear();
+		this.ratingMap.clear();
+	}
+
+	// Gives an unique integer ID to every name in the list
+	private void constructMaps(HashMap<String, Integer> nameIDMap, HashMap<Integer, String> IDNameMap, int startFrom){
+		TreeSet<String> sortedNames = new TreeSet<String>(nameIDMap.keySet());
+		int IDCounter = startFrom;
+		for(String name: sortedNames){
+			nameIDMap.put(name, IDCounter);
+			IDNameMap.put(IDCounter, name);
+			IDCounter ++;
 		}
 	}
 
-	public void writeOutputFile() throws Exception{
-		PrintWriter writer = new PrintWriter(outputFilePath);
+	private void constructMaps(HashMap<String, Integer> nameIDMap, HashMap<Integer, String> IDNameMap){
+        constructMaps(nameIDMap, IDNameMap, 0);
+    }
 
-		for(Map.Entry<String, HashMap<String, Integer> > userKey: this.ratingMap.entrySet()){
-			String user = userKey.getKey();
-			HashMap<String, Integer> itemMap = userKey.getValue();
-
-			for(Map.Entry<String, Integer> itemKey: itemMap.entrySet()){
-				String item = itemKey.getKey();
-				Integer rating = itemKey.getValue();
-
-				writer.printf("%d %s:1 %s:1", rating, user, item);
-				if(featureMap.get(item) != null){
-					writer.printf(" " + featureMap.get(item));
-				}
-				writer.printf("\n");
-			}
+	// Adds the rating of a user to an item
+	private void addRating(String user, String item){
+		if(!this.ratingMap.containsKey(user)){
+			this.ratingMap.put(user, new HashMap<String, Integer>());
+		}
+		if(!this.ratingMap.get(user).containsKey(item)){
+			this.ratingMap.get(user).put(item, 0);
 		}
 
-		writer.close();
-	}
-
-	private void remapListNumbers(ArrayList<String> list, HashMap<String, String> idMap){
-		remapListNumbers(list, idMap, 1);
-	}
-
-	private void remapListNumbers(ArrayList<String> list, HashMap<String, String> idMap, int startFrom){
-		ArrayList<String> copiedList = new ArrayList<String>();
-		
-		for(String element: list){
-			copiedList.add(element);
-		}
-
-		Collections.sort(copiedList);
-		idMap.clear();
-
-		int counter = startFrom;
-		for(int i = 0; i < copiedList.size(); i ++){
-			if(i > 0 && !copiedList.get(i - 1).equals(copiedList.get(i))){
-				counter ++;
-			}
-			idMap.put(copiedList.get(i), Integer.toString(counter));
-		}
-
-		for(int i = 0; i < list.size(); i ++){
-			String element = list.get(i);
-			list.set(i, idMap.get(element));
-		}
+		int rating = this.ratingMap.get(user).get(item);
+		this.ratingMap.get(user).put(item, rating + 1);
 	}
 }

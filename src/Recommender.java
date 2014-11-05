@@ -1,6 +1,7 @@
 import java.io.*;
 import java.util.*;
 import java.nio.file.*;
+import java.nio.charset.StandardCharsets;
 
 /**
  * The class is the core of the recommender system.
@@ -63,7 +64,7 @@ public class Recommender {
 
     List<Double> parsePredictionFile(Path p) throws IOException {
         List<Double> result = new ArrayList<Double>();
-        List<String> lines = Files.readAllLines(p);
+        List<String> lines = Files.readAllLines(p, StandardCharsets.UTF_8);
         for (String line : lines)
             result.add(Double.parseDouble(line.trim()));
         return result;

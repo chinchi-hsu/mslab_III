@@ -20,12 +20,13 @@ public class Transformation{
 		this.ratingMap = new HashMap<String, HashMap<String, Integer> >();
 	}
 
-	/* Reads user-item information from an CSV file, and constructs a mapping between read names and IDs.
-	 * 	Name: The original information (name, id, etc.) of users or items from the CSV file
-	 * 	ID: The transformed (remapped) integers in this class
+	/** Reads user-item information from an CSV file, and constructs a mapping between read names and IDs.
+	 * Name: The original information (name, id, etc.) of users or items from the CSV file
+	 * ID: The transformed (remapped) integers in this class
 	 * @param csvFilePath		The path of the assigned CSV file.
 	 * @param userColumnIndex	Assigns which column index represents users.
 	 * @param itemColumnIndex	Assigns which column index represents items.
+     * @throws IOException if the CSV file cannot be opened.
 	 */
 	public void readCSVFile(String csvFilePath, int userColumnIndex, int itemColumnIndex) throws IOException {
 		this.clearMappings();
@@ -57,7 +58,7 @@ public class Transformation{
 		this.constructMaps(this.itemNameIDMap, this.itemIDNameMap, this.userIDNameMap.size());
 	}
 
-	/* Reads user-item information from a PostgreSQL database, and constructs a mapping between read names and IDs
+	/** Reads user-item information from a PostgreSQL database, and constructs a mapping between read names and IDs
 	 * @param databaseURL		The URL (consisting of the port number) of the assigned PostgreSQL database like "54.64.73.96:5432".
 	 * @param databaseName		The name of the assigned database like "oneclickshoppingwall".
 	 * @param account		An account to log in the database.
@@ -107,10 +108,21 @@ public class Transformation{
 		this.constructMaps(this.itemNameIDMap, this.itemIDNameMap, this.userIDNameMap.size());
 	}
 
+    /**
+     * Write current data to <tt>outputFilePath</tt> (in libFM format).
+     *
+     * @param  outputFilePath The output file path.
+     * @throws IOException    If the <tt>outputFilePath</tt> cannot be opened.
+     */
 	public void writeOutputFile(String outputFilePath) throws IOException {
 		Files.write(FileSystems.getDefault().getPath(outputFilePath), getLibfmFormatLines(), StandardCharsets.UTF_8);
 	}
 
+    /**
+     * Dump current data into lines of <tt>String</tt>s in libFM format.
+     *
+     * @return A list of <tt>String</tt>s in libFM format.
+     */
 	public List<String> getLibfmFormatLines() {
 		List<String> lines = new ArrayList<String>();
 		for(Map.Entry<String, HashMap<String, Integer> > userKey: this.ratingMap.entrySet()){
@@ -127,21 +139,87 @@ public class Transformation{
 		return lines;
 	}
 
+    /**
+     * Convert a user-item pair into a <tt>String</tt> in libFM format.
+     * If the user-item pair has not been seen, the rating will be -1.
+     * @param  user The user name.
+     * @param  item The item name.
+     * @return The converted line.
+     */
+    public String convertToLibfmFormat(String user, String item) {
+        Integer rating = getRating(user, item);
+        if (rating != null) // has seen this user-item pair
+            return String.format("%d %d:1 %d:1", rating, mapUserNameToID(user), mapItemNameToID(item));
+        else
+            return String.format("%d %d:1 %d:1", -1, mapUserNameToID(user), mapItemNameToID(item));
+    }
+
+    /**
+     * Convert a user name to the integer index used in this system.
+     * @param  name User name in the original CSV file or database.
+     * @return the converted integer index used in this system.
+     */
 	public int mapUserNameToID(String name){
 		return this.userNameIDMap.get(name);
 	}
-	
+
+    /**
+     * Convert an item name to the integer index used in this system.
+     * @param  name Item name in the original CSV file or database.
+     * @return the converted integer index used in this system.
+     */
 	public int mapItemNameToID(String name){
 		return this.itemNameIDMap.get(name);
 	}
 
+    /**
+     * Convert an integer index back into the original user name.
+     * @param  ID the converted integer index used in this system.
+     * @return User name in the original CSV file or database.
+     */
 	public String mapUserIDToName(int ID){
 		return this.userIDNameMap.get(ID);
 	}
 
+    /**
+     * Convert an integer index back into the original item name.
+     * @param  ID the converted integer index used in this system.
+     * @return Item name in the original CSV file or database.
+     */
 	public String mapItemIDToName(int ID){
 		return this.itemIDNameMap.get(ID);
 	}
+
+    /**
+     * Get the <tt>Set</tt> of all users.
+     * @return The set of users (the original names in the database).
+     */
+    public Set<String> getUserSet() {
+        return this.userNameIDMap.keySet();
+    }
+
+    /**
+     * Get the <tt>Set</tt> of all items.
+     * @return The set of items (the original names in the database).
+     */
+    public Set<String> getItemSet() {
+        return this.itemNameIDMap.keySet();
+    }
+
+    /**
+     * Get the rating for a user-item pair.
+     * Returns <tt>null</tt> if we have not observed this user-item pair.
+     *
+     * @param  user The user name.
+     * @param  item The item name.
+     * @return the rating if this user-item pair has been observed, otherwise <tt>null</tt>.
+     */
+    public Integer getRating(String user, String item) {
+        HashMap<String, Integer> ratings = this.ratingMap.get(user);
+        if (ratings == null)
+            return null;
+        return this.ratingMap.get(user).get(item);
+    }
 
 	private void clearMappings(){
 		this.userNameIDMap.clear();
@@ -151,7 +229,7 @@ public class Transformation{
 		this.ratingMap.clear();
 	}
 
-	/* Gives an unique integer ID to every name in the list.
+	/** Gives an unique integer ID to every name in the list.
 	 * @param nameIDMap	A mapping from names to IDs.
 	 * @param IDNameMap	A mapping from IDs to names.
 	 * @param startFrom	The starting index of the ID counter.
@@ -166,7 +244,7 @@ public class Transformation{
 		}
 	}
 
-	/* Gives an unique integer ID to every name in the list where the starting index of the ID counter is 0.
+	/** Gives an unique integer ID to every name in the list where the starting index of the ID counter is 0.
 	 * @param nameIDMap A mapping from names to IDs.
 	 * @param IDNameMap A mapping from IDs to names.
 	 */
@@ -174,7 +252,7 @@ public class Transformation{
         	constructMaps(nameIDMap, IDNameMap, 0);
     	}
 
-	/* Adds the rating of a user to an item.
+	/** Adds the rating of a user to an item.
 	 * @param user The name of a user.
 	 * @param item The name of an item.
 	 */

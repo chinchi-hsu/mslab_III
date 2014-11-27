@@ -84,19 +84,25 @@ public class Evaluator {
      * Leave-one-out cross validation using remote DB data.
      * @see <a href="http://en.wikipedia.org/wiki/Cross-validation_%28statistics%29">"Cross-validation (statistics)" on Wikipedia</a>
      *
-     * @param  libfmPath   The file path of the libFM executable.
-     * @param  tableName   which table in the DB contains the data.
-     * @param  outputPath  The file path for saving the prediction results.
-     * @param  nFactors    The number of latent factors used in libFM.
-     * @param  userField   The data field corresponding to user ID.
-     * @param  itemField   The data field corresponding to item ID.
+     * @param  libfmPath         The file path of the libFM executable.
+     * @param  tableName         which table in the DB contains the data.
+     * @param  outputPath        The file path for saving the prediction results.
+     * @param  nFactors          The number of latent factors used in libFM.
+     * @param  userField         The data field corresponding to user ID.
+     * @param  itemField         The data field corresponding to item ID.
+     * @param  categoryTableName The name of a table in the database like "master_category".
+     * @param  itemTableName     The name of a table in the database like "product" or "coupon".
+     * @param  categoryField     The field representing categories like "mcid".
      *
      * @throws IOException if error occurs at file IO.
      */
-    public static void loocv_db(String libfmPath, String tableName, String outputPath, int nFactors, String userField, String itemField) throws IOException {
+    public static void loocv_db(String libfmPath, String tableName, String outputPath, int nFactors, String userField, String itemField, String categoryTableName, String itemTableName, String categoryField) throws IOException {
         // load input CSV file and transform into libFM format
         Transformation tr = new Transformation();
-        tr.readDatabase(databaseURL, databaseName, account, password, tableName, userField, itemField);
+        if (categoryTableName == null || itemTableName == null || categoryField == null)
+            tr.readDatabase(databaseURL, databaseName, account, password, tableName, userField, itemField); // don't use category
+        else
+            tr.readDatabase(databaseURL, databaseName, account, password, tableName, userField, itemField, categoryTableName, itemTableName, categoryField);
         List<String> lines = tr.getLibfmFormatLines();
 
         // lines to be written to the output file
@@ -152,6 +158,23 @@ public class Evaluator {
     }
 
     /**
+     * Leave-one-out cross validation using remote DB data (without category information).
+     * @see <a href="http://en.wikipedia.org/wiki/Cross-validation_%28statistics%29">"Cross-validation (statistics)" on Wikipedia</a>
+     *
+     * @param  libfmPath         The file path of the libFM executable.
+     * @param  tableName         which table in the DB contains the data.
+     * @param  outputPath        The file path for saving the prediction results.
+     * @param  nFactors          The number of latent factors used in libFM.
+     * @param  userField         The data field corresponding to user ID.
+     * @param  itemField         The data field corresponding to item ID.
+     *
+     * @throws IOException if error occurs at file IO.
+     */
+    public static void loocv_db(String libfmPath, String tableName, String outputPath, int nFactors, String userField, String itemField) throws IOException {
+        loocv_db(libfmPath, tableName, outputPath, nFactors, userField, itemField, null, null, null);
+    }
+
+    /**
      * Compute RMSE for an output file.
      * @see <a href="https://www.kaggle.com/wiki/RootMeanSquaredError">The mathematical definition of RMSE</a>
      *
@@ -201,8 +224,10 @@ public class Evaluator {
         String line = null;
         for (String user : tr.getUserSet()) {
             System.out.print("\rGenerating the top-" + N + " recommendation list for user=" + user + "...");
-            line = "" + user + ",";
             recommendationList = model.getRecommendationList(user, N);
+            if (recommendationList.isEmpty())
+                continue;
+            line = "" + user + ",";
             for (String item : recommendationList)
                 line += item + " ";
             output.add(line.trim());
@@ -241,8 +266,10 @@ public class Evaluator {
         String line = null;
         for (String user : tr.getUserSet()) {
             System.out.print("\rGenerating the recommendation list for user=" + user + "...");
-            line = "" + user + ",";
             recommendationList = model.getRecommendationList(user);
+            if (recommendationList.isEmpty())
+                continue;
+            line = "" + user + ",";
             for (String item : recommendationList)
                 line += item + " ";
             output.add(line.trim());
@@ -282,8 +309,10 @@ public class Evaluator {
         String line = null;
         for (String user : tr.getUserSet()) {
             System.out.print("\rGenerating the top-" + N + " recommendation list for user=" + user + "...");
-            line = "" + user + ",";
             recommendationList = model.getRecommendationList(user, N);
+            if (recommendationList.isEmpty())
+                continue;
+            line = "" + user + ",";
             for (String item : recommendationList)
                 line += item + " ";
             output.add(line.trim());
@@ -322,8 +351,10 @@ public class Evaluator {
         String line = null;
         for (String user : tr.getUserSet()) {
             System.out.print("\rGenerating the recommendation list for user=" + user + "...");
-            line = "" + user + ",";
             recommendationList = model.getRecommendationList(user);
+            if (recommendationList.isEmpty())
+                continue;
+            line = "" + user + ",";
             for (String item : recommendationList)
                 line += item + " ";
             output.add(line.trim());
@@ -333,16 +364,74 @@ public class Evaluator {
         Files.write(FileSystems.getDefault().getPath(outputPath), output, StandardCharsets.UTF_8);
     }
 
+    /**
+     * Recommend a list of items for each category and each user using data from DB.
+     *
+     * @param  libfmPath         The file path of the libFM executable.
+     * @param  tableName         which table in the DB contains the rating data.
+     * @param  outputPath        The file path for saving the prediction results.
+     * @param  nFactors          The number of latent factors used in libFM.
+     * @param  userField         The data field corresponding to user ID.
+     * @param  itemField         The data field corresponding to item ID.
+     * @param  categoryTableName The name of a table in the database like "master_category".
+     * @param  itemTableName     The name of a table in the database like "product".
+     * @param  categoryField     The field representing categories like "mcid".
+     * @throws IOException       if error occurs at file IO.
+     */
+    public static void recommendForUsers_db_category(String libfmPath, String tableName, String outputPath, int nFactors, String userField, String itemField, String categoryTableName, String itemTableName, String categoryField) throws IOException {
+        // load input CSV file and transform into libFM format
+        Transformation tr = new Transformation();
+        tr.readDatabase(databaseURL, databaseName, account, password, tableName, userField, itemField, categoryTableName, itemTableName, categoryField);
+
+        // initialize the Recommender
+        Recommender model = new Recommender(libfmPath, nFactors, tr);
+
+        // lines to be written to the output file
+        List<String> output = new ArrayList<String>();
+        output.add("user_id,category,items");
+
+        // get recommendation list for each user
+        List<String> recommendationList = null;
+        String line = null;
+        long startTime = System.nanoTime();
+        for (String user : tr.getUserSet()) {
+            for (String category : tr.getCategorySet()) {
+                System.out.print("\rGenerating the recommendation list for user=" + user + " category=" + category + "...");
+                recommendationList = model.getRecommendationList(user, category);
+                if (recommendationList.isEmpty())
+                    continue;
+                line = "" + user + "," + category + ",";
+                for (String item : recommendationList)
+                    line += item + " ";
+                output.add(line.trim());
+            }
+        }
+        System.out.println();
+        System.out.println("Execution time: " + 1.0 * (System.nanoTime() - startTime) / 1e9);
+        System.out.println("Execution time per user: " + 1.0 * (System.nanoTime() - startTime) / 1e9 / tr.getUserSet().size());
+
+        System.out.println("Output the recommendation lists...");
+        Files.write(FileSystems.getDefault().getPath(outputPath), output, StandardCharsets.UTF_8);
+    }
+
     public static void main(String[] args) {
-        if (args.length != 7) {
+        if (args.length < 7) {
             System.out.println("\nERROR: number of argument is wrong. Please see the README file.\n\n");
             System.exit(-1);
         }
         try {
             if (args[6].equals("-db")) {
-                loocv_db(args[0], args[1], args[2], Integer.parseInt(args[3]), args[4], args[5]);
-                recommendTopNForUsers_db(args[0], args[1], args[2]+".toplist", Integer.parseInt(args[3]), args[4], args[5], 5);
-                recommendForUsers_db(args[0], args[1], args[2]+".list", Integer.parseInt(args[3]), args[4], args[5]);
+                if (args.length == 7) {
+                    // no category
+                    loocv_db(args[0], args[1], args[2], Integer.parseInt(args[3]), args[4], args[5]);
+                    recommendTopNForUsers_db(args[0], args[1], args[2]+".toplist", Integer.parseInt(args[3]), args[4], args[5], 5);
+                    recommendForUsers_db(args[0], args[1], args[2]+".list", Integer.parseInt(args[3]), args[4], args[5]);
+                }
+                else {
+                    // use category
+                    loocv_db(args[0], args[1], args[2], Integer.parseInt(args[3]), args[4], args[5], args[7], args[8], args[9]);
+                    recommendForUsers_db_category(args[0], args[1], args[2]+".category", Integer.parseInt(args[3]), args[4], args[5], args[7], args[8], args[9]);
+                }
             }
             else {
                 loocv(args[0], args[1], args[2], Integer.parseInt(args[3]), Integer.parseInt(args[4]), Integer.parseInt(args[5]));

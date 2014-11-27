@@ -111,11 +111,12 @@ public class Recommender {
      * The returned list will only contain the unseen items for the user.
      *
      * @param  user        The user ID.
+     * @param  category    The category name.
      * @param  N           Only the top-<tt>N</tt> items will be returned.
      * @throws IOException if fails to read or write a file.
      * @return             A <tt>List</tt> of item IDs, sorted according to the predicted ratings.
      */
-    public List<String> getRecommendationList(String user, int N) throws IOException {
+    public List<String> getRecommendationList(String user, String category, int N) throws IOException {
         // the list of items to be returned
         List<String> recommendationList = new ArrayList<String>();
 
@@ -124,6 +125,8 @@ public class Recommender {
         List<String> testLines = new ArrayList<String>();
         Set<String> items = tr.getItemSet();
         for (String item : items) {
+            if (category != null && (tr.getCategory(item) == null || tr.getCategory(item) != tr.mapCategoryNameToID(category)))
+                continue;
             if (tr.getRating(user, item) == null) {
                 testLines.add(tr.convertToLibfmFormat(user, item));
                 recommendationList.add(item);
@@ -159,7 +162,9 @@ public class Recommender {
         });
 
         // if N == 0, return all items
-        return (N == 0)? recommendationList: recommendationList.subList(0, N);
+        if (N > 0 && recommendationList.size() >= N)
+            return recommendationList.subList(0, N);
+        return recommendationList;
     }
 
     /**
@@ -171,6 +176,32 @@ public class Recommender {
      * @return             A <tt>List</tt> of item IDs, sorted according to the predicted ratings.
      */
     public List<String> getRecommendationList(String user) throws IOException {
-        return getRecommendationList(user, 0);
+        return getRecommendationList(user, null, 0);
+    }
+
+    /**
+     * Get the recommendation item list for a given user.
+     * The returned list will only contain the unseen items for the user.
+     *
+     * @param  user        The user ID.
+     * @param  category    The category name.
+     * @throws IOException if fails to read or write a file.
+     * @return             A <tt>List</tt> of item IDs, sorted according to the predicted ratings.
+     */
+    public List<String> getRecommendationList(String user, String category) throws IOException {
+        return getRecommendationList(user, category, 0);
+    }
+
+    /**
+     * Get the recommendation item list for a given user.
+     * The returned list will only contain the unseen items for the user.
+     *
+     * @param  user        The user ID.
+     * @param  N           Only the top-<tt>N</tt> items will be returned.
+     * @throws IOException if fails to read or write a file.
+     * @return             A <tt>List</tt> of item IDs, sorted according to the predicted ratings.
+     */
+    public List<String> getRecommendationList(String user, int N) throws IOException {
+        return getRecommendationList(user, null, N);
     }
 }

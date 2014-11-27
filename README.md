@@ -66,6 +66,9 @@ Example
 - Item IDs are in the field "pid" of the table "product_order"
 
 
+Example: using category information
+-------
+
     java -cp bin:lib/\* Evaluator /root/libfm/libfm-1.42-src/bin/libFM coupon_collection output/coupon_collection.csv 5 aid cid -db master_category coupon mcid
 
 - libFM is located at /root/libfm/libfm-1.42-src/bin/libFM
